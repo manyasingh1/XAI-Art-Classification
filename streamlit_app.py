@@ -15,8 +15,13 @@ st.markdown("Upload an artwork or sample one from the WikiArt dataset to see a l
 
 @st.cache_resource
 def load_models():
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    return load_models_and_processors(device), device
+    try:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        st.info(f"Loading models on {device}... This may take a moment.")
+        return load_models_and_processors(device), device
+    except Exception as e:
+        st.error(f"Failed to load models: {e}")
+        st.stop()
 
 (vit_resources, resnet_resources), device = load_models()
 vit_model, vit_processor = vit_resources
@@ -29,9 +34,20 @@ img_pil = None
 if input_option == "Sample from WikiArt":
     if st.sidebar.button("Fetch Random Sample"):
         with st.spinner("Fetching a random sample from huggingface..."):
-            sample_img, true_style = get_random_wikiart_sample()
-            st.session_state["current_img"] = sample_img
-            st.session_state["true_style"] = true_style
+            try:
+                sample_img, true_style = get_random_wikiart_sample()
+                st.session_state["current_img"] = sample_img
+                st.session_state["true_style"] = true_style
+            except Exception as e:
+                st.error(f"Failed to load sample from dataset: {e}")
+                st.info("This might be due to memory constraints. Try uploading your own image instead.")
+                # Create a fallback image
+                import numpy as np
+                from PIL import Image
+                img_array = np.random.randint(100, 200, (224, 224, 3), dtype=np.uint8)
+                fallback_img = Image.fromarray(img_array)
+                st.session_state["current_img"] = fallback_img
+                st.session_state["true_style"] = "Sample Art"
             
     if "current_img" in st.session_state:
         img_pil = st.session_state["current_img"]
@@ -86,13 +102,12 @@ if img_pil is not None:
             
             with col1:
                 st.header("🔍 ResNet-18 Analysis")
-                st.success(f"**Predicted Style:** {resnet_class_name}")
-                st.info(f"**Artistic Era:** {resnet_era}")
+                st.success(f"**Predicted Era:** {resnet_era}")
                 st.metric("Confidence", f"{resnet_confidence:.1%}")
                 
                 st.markdown("""
-                **ResNet-18** is a convolutional neural network that learns hierarchical features from images.
-                It processes images through multiple layers of convolution and pooling to extract patterns.
+                **ResNet-18** is a convolutional neural network that analyzes the artwork and infers an era.
+                The era is derived from the model's predicted label and mapped to a historical art era.
                 """)
                 
                 st.subheader("🎯 Grad-CAM (Gradient-weighted Class Activation Mapping)")
@@ -139,22 +154,20 @@ if img_pil is not None:
             st.divider()
             st.header("📋 Analysis Summary")
             
-            # Agreement check
-            agreement = "agree" if resnet_class_name == vit_class_name else "disagree"
             higher_conf = "ResNet-18" if resnet_confidence > vit_confidence else "ViT"
             
             st.markdown(f"""
             ### Model Comparison:
-            - **Agreement**: The models {agreement} on the predicted style
+            - **ResNet-18** inferred era: **{resnet_era}**
+            - **Vision Transformer** predicted style: **{vit_class_name}** and inferred era **{vit_era}**
             - **Higher Confidence**: {higher_conf} showed more confidence in its prediction
-            - **Artistic Era**: Both models suggest this artwork belongs to the **{resnet_era}** era
             
             ### What This Means:
-            - **ResNet-18** excels at capturing local patterns and textures through convolutional layers
-            - **Vision Transformer** understands global context and relationships between image regions
-            - **XAI Methods** help explain why the models made their predictions, increasing trust and understanding
+            - **ResNet-18** infers the artwork's era from its prediction.
+            - **Vision Transformer** predicts the art style directly and infers era from that style.
+            - **XAI Methods** help explain why the models made their predictions, increasing trust and understanding.
             
             ### About the Dataset:
             This analysis uses models fine-tuned on the WikiArt dataset, containing artworks from various styles and periods.
-            The models can classify into {len(resnet_model.config.id2label)} different artistic styles.
+            The ResNet model's labels are mapped internally to eras for display.
             """)
