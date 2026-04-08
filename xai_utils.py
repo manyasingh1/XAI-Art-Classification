@@ -4,6 +4,72 @@ from transformers import AutoImageProcessor, AutoModelForImageClassification
 import numpy as np
 from PIL import Image
 
+# Art style to era mapping
+STYLE_TO_ERA = {
+    # Renaissance (1400-1600)
+    "Early Renaissance": "Renaissance",
+    "High Renaissance": "Renaissance", 
+    "Mannerism (Late Renaissance)": "Renaissance",
+    
+    # Baroque (1600-1750)
+    "Baroque": "Baroque",
+    "Dutch Golden Age": "Baroque",
+    
+    # Rococo (1700-1780)
+    "Rococo": "Rococo",
+    
+    # Neoclassicism (1750-1850)
+    "Neoclassicism": "Neoclassicism",
+    
+    # Romanticism (1780-1850)
+    "Romanticism": "Romanticism",
+    
+    # Realism (1840-1880)
+    "Realism": "Realism",
+    
+    # Impressionism (1860-1890)
+    "Impressionism": "Impressionism",
+    "Post-Impressionism": "Post-Impressionism",
+    
+    # Modern Art (1880-1970)
+    "Art Nouveau (Modern)": "Modern Art",
+    "Expressionism": "Modern Art",
+    "Cubism": "Modern Art",
+    "Futurism": "Modern Art",
+    "Dadaism": "Modern Art",
+    "Surrealism": "Modern Art",
+    "Abstract Expressionism": "Modern Art",
+    "Pop Art": "Modern Art",
+    "Minimalism": "Modern Art",
+    
+    # Contemporary (1970-present)
+    "Contemporary Realism": "Contemporary",
+    "Street Art": "Contemporary",
+    "Digital Art": "Contemporary",
+    
+    # Other mappings
+    "Northern Renaissance": "Renaissance",
+    "Mannerism": "Renaissance",
+    "Academicism": "Academic Art",
+    "Symbolism": "Symbolism",
+    "Pointillism": "Post-Impressionism",
+    "Fauvism": "Modern Art",
+    "Constructivism": "Modern Art",
+    "Suprematism": "Modern Art",
+    "Bauhaus": "Modern Art",
+    "Art Deco": "Modern Art",
+    "Op Art": "Modern Art",
+    "Conceptual Art": "Contemporary",
+    "Installation Art": "Contemporary",
+    "Performance Art": "Contemporary",
+}
+
+def get_era_from_style(style_name):
+    """
+    Map art style to historical era.
+    """
+    return STYLE_TO_ERA.get(style_name, "Unknown Era")
+
 def load_wikiart_dataset(num_samples=200):
     """
     Loads a streaming portion of the huggan/wikiart dataset.
