@@ -1,0 +1,12 @@
+transformers>=4.30.0
+torch
+torchvision
+datasets
+matplotlib
+grad-cam
+captum
+opencv-python
+jupyter
+ipywidgets
+Pillow
+streamlit
