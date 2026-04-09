@@ -4,7 +4,14 @@ from PIL import Image
 import warnings
 warnings.filterwarnings('ignore')
 
-from xai_utils import load_models_and_processors, preprocess_image, get_random_wikiart_sample, get_era_from_style
+from xai_utils import (
+    load_models_and_processors,
+    preprocess_image,
+    get_random_wikiart_sample,
+    get_era_from_style,
+    decode_prediction_label,
+    decode_prediction_label_with_source,
+)
 from resnet_xai import generate_grad_cam, generate_integrated_gradients, generate_occlusion_sensitivity
 from vit_xai import generate_vit_rollout
 from visualization import overlay_heatmap
@@ -68,9 +75,29 @@ if img_pil is not None:
             resnet_inputs = preprocess_image(img_pil, resnet_processor, device)
             # Classification
             resnet_outputs = resnet_model(**resnet_inputs)
-            resnet_pred_id = resnet_outputs.logits.argmax(-1).item()
-            resnet_class_name = resnet_model.config.id2label[resnet_pred_id]
-            resnet_confidence = torch.softmax(resnet_outputs.logits, dim=1)[0, resnet_pred_id].item()
+            resnet_probs = torch.softmax(resnet_outputs.logits, dim=1)[0]
+            num_classes = resnet_outputs.logits.shape[-1]
+            top_k = min(5, num_classes)
+            resnet_top_ids = torch.topk(resnet_outputs.logits, k=top_k, dim=1).indices[0].tolist()
+
+            # Prefer a non-unknown prediction for downstream era mapping and XAI target.
+            resnet_pred_id = resnet_top_ids[0]
+            resnet_selection_mode = "top1"
+            for candidate_id in resnet_top_ids:
+                candidate_label, _ = decode_prediction_label_with_source(resnet_model, candidate_id)
+                candidate_era = get_era_from_style(candidate_label)
+                if candidate_label.strip().lower() != "unknown artist" and candidate_era != "Unknown Era":
+                    resnet_pred_id = candidate_id
+                    if candidate_id != resnet_top_ids[0]:
+                        resnet_selection_mode = "topk_non_unknown"
+                    break
+
+            resnet_raw_label = (resnet_model.config.id2label or {}).get(
+                resnet_pred_id,
+                (resnet_model.config.id2label or {}).get(str(resnet_pred_id), "N/A"),
+            )
+            resnet_class_name, resnet_label_source = decode_prediction_label_with_source(resnet_model, resnet_pred_id)
+            resnet_confidence = resnet_probs[resnet_pred_id].item()
             resnet_era = get_era_from_style(resnet_class_name)
             
             # XAI
@@ -88,7 +115,11 @@ if img_pil is not None:
             # Classification
             vit_outputs = vit_model(**vit_inputs)
             vit_pred_id = vit_outputs.logits.argmax(-1).item()
-            vit_class_name = vit_model.config.id2label[vit_pred_id]
+            vit_raw_label = (vit_model.config.id2label or {}).get(
+                vit_pred_id,
+                (vit_model.config.id2label or {}).get(str(vit_pred_id), "N/A"),
+            )
+            vit_class_name, vit_label_source = decode_prediction_label_with_source(vit_model, vit_pred_id)
             vit_confidence = torch.softmax(vit_outputs.logits, dim=1)[0, vit_pred_id].item()
             vit_era = get_era_from_style(vit_class_name)
             
@@ -102,8 +133,11 @@ if img_pil is not None:
             
             with col1:
                 st.header("🔍 ResNet-18 Analysis")
+                st.info(f"**Predicted Style:** {resnet_class_name}")
                 st.success(f"**Predicted Era:** {resnet_era}")
                 st.metric("Confidence", f"{resnet_confidence:.1%}")
+                if resnet_selection_mode == "topk_non_unknown":
+                    st.caption("ResNet top-1 was unknown; using highest-confidence non-unknown class from top-5.")
                 
                 st.markdown("""
                 **ResNet-18** is a convolutional neural network that analyzes the artwork and infers an era.
@@ -171,3 +205,26 @@ if img_pil is not None:
             This analysis uses models fine-tuned on the WikiArt dataset, containing artworks from various styles and periods.
             The ResNet model's labels are mapped internally to eras for display.
             """)
+
+            with st.expander("Debug: Label Decoding Details"):
+                st.markdown("Use this to verify raw logits class IDs are converted into readable labels.")
+                st.write(
+                    {
+                        "resnet": {
+                            "pred_id": resnet_pred_id,
+                            "top_ids_considered": resnet_top_ids,
+                            "selection_mode": resnet_selection_mode,
+                            "raw_id2label": resnet_raw_label,
+                            "decoded_label": resnet_class_name,
+                            "label_source": resnet_label_source,
+                            "mapped_era": resnet_era,
+                        },
+                        "vit": {
+                            "pred_id": vit_pred_id,
+                            "raw_id2label": vit_raw_label,
+                            "decoded_label": vit_class_name,
+                            "label_source": vit_label_source,
+                            "mapped_era": vit_era,
+                        },
+                    }
+                )

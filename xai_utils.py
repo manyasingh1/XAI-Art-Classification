@@ -175,6 +175,106 @@ ARTIST_TO_ERA = {
     "canaletto": "Rococo",
 }
 
+_WIKIART_STYLE_NAMES = None
+_WIKIART_STYLE_FALLBACK = [
+    "Abstract_Expressionism",
+    "Action_painting",
+    "Analytical_Cubism",
+    "Art_Nouveau_Modern",
+    "Baroque",
+    "Color_Field_Painting",
+    "Contemporary_Realism",
+    "Cubism",
+    "Early_Renaissance",
+    "Expressionism",
+    "Fauvism",
+    "High_Renaissance",
+    "Impressionism",
+    "Mannerism_Late_Renaissance",
+    "Minimalism",
+    "Naive_Art_Primitivism",
+    "New_Realism",
+    "Northern_Renaissance",
+    "Pointillism",
+    "Pop_Art",
+    "Post_Impressionism",
+    "Realism",
+    "Rococo",
+    "Romanticism",
+    "Symbolism",
+    "Synthetic_Cubism",
+    "Ukiyo_e",
+]
+
+def _is_generic_label(label_name):
+    """
+    True when model labels look like placeholders such as LABEL_12.
+    """
+    if not isinstance(label_name, str):
+        return True
+    normalized = label_name.strip().lower()
+    return normalized.startswith("label_") or normalized.startswith("class_") or normalized.isdigit()
+
+def _get_wikiart_style_names():
+    """
+    Load WikiArt style names once and cache them for label fallback.
+    """
+    global _WIKIART_STYLE_NAMES
+    if _WIKIART_STYLE_NAMES is not None:
+        return _WIKIART_STYLE_NAMES
+
+    try:
+        dataset = load_dataset("huggan/wikiart", split="train", streaming=True)
+        style_feature = dataset.features.get("style")
+        if hasattr(style_feature, "names") and style_feature.names:
+            _WIKIART_STYLE_NAMES = list(style_feature.names)
+            return _WIKIART_STYLE_NAMES
+    except Exception:
+        pass
+
+    _WIKIART_STYLE_NAMES = list(_WIKIART_STYLE_FALLBACK)
+    return _WIKIART_STYLE_NAMES
+
+def decode_prediction_label_with_source(model, pred_id):
+    """
+    Convert class index to a label and return which mapping source was used.
+    """
+    config = getattr(model, "config", None)
+    if config is None:
+        return f"label_{pred_id}", "fallback_literal"
+
+    id2label = getattr(config, "id2label", {}) or {}
+    raw_label = id2label.get(pred_id, id2label.get(str(pred_id)))
+    if raw_label and not _is_generic_label(raw_label):
+        return raw_label, "config_id2label"
+
+    label2id = getattr(config, "label2id", {}) or {}
+    inverse = {}
+    for name, idx in label2id.items():
+        if isinstance(idx, int):
+            inverse[idx] = name
+        elif isinstance(idx, str) and idx.isdigit():
+            inverse[int(idx)] = name
+    inverse_label = inverse.get(pred_id)
+    if inverse_label and not _is_generic_label(inverse_label):
+        return inverse_label, "config_label2id_inverse"
+
+    # Manual fallback: use WikiArt's own style label names by index.
+    style_names = _get_wikiart_style_names()
+    if 0 <= pred_id < len(style_names):
+        return style_names[pred_id], "manual_wikiart_styles"
+
+    if raw_label:
+        return str(raw_label), "config_id2label_generic"
+    return f"label_{pred_id}", "fallback_literal"
+
+def decode_prediction_label(model, pred_id):
+    """
+    Convert predicted class index to a human-readable label with robust fallbacks.
+    """
+    label, _ = decode_prediction_label_with_source(model, pred_id)
+    return label
+
 def get_era_from_style(style_name):
     """
     Map art style or artist label to historical era.

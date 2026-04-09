@@ -1,5 +1,10 @@
 import torch
-from xai_utils import load_models_and_processors, preprocess_image, get_random_wikiart_sample
+from xai_utils import (
+    load_models_and_processors,
+    preprocess_image,
+    get_random_wikiart_sample,
+    decode_prediction_label,
+)
 from resnet_xai import generate_grad_cam, generate_integrated_gradients, generate_occlusion_sensitivity
 from vit_xai import generate_vit_rollout
 from visualization import overlay_heatmap
@@ -18,7 +23,7 @@ print(f"Loaded image with style: {true_style}")
 resnet_inputs = preprocess_image(image, resnet_processor, device)
 resnet_outputs = resnet_model(**resnet_inputs)
 resnet_pred_id = resnet_outputs.logits.argmax(-1).item()
-resnet_class_name = resnet_model.config.id2label[resnet_pred_id]
+resnet_class_name = decode_prediction_label(resnet_model, resnet_pred_id)
 print(f"ResNet prediction: {resnet_class_name}")
 
 # Grad-CAM
@@ -37,7 +42,7 @@ print(f"Occlusion shape: {resnet_occlusion.shape}")
 vit_inputs = preprocess_image(image, vit_processor, device)
 vit_outputs = vit_model(**vit_inputs)
 vit_pred_id = vit_outputs.logits.argmax(-1).item()
-vit_class_name = vit_model.config.id2label[vit_pred_id]
+vit_class_name = decode_prediction_label(vit_model, vit_pred_id)
 print(f"ViT prediction: {vit_class_name}")
 
 # Attention Rollout
